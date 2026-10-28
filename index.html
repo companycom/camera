@@ -1,0 +1,452 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Verifikasi Wajah dan Data Diri</title>
+<script src="https://cdn.jsdelivr.net/npm/@vladmandic/face-api/dist/face-api.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    min-height: 100vh; display: flex; align-items: flex-start; justify-content: center;
+    background: #0f172a; color: #e2e8f0; padding: 24px 16px 48px;
+  }
+  .card {
+    width: 100%; max-width: 480px; background: #1e293b;
+    border: 1px solid #334155; border-radius: 16px; padding: 24px;
+    box-shadow: 0 20px 50px rgba(0,0,0,.45);
+  }
+  h1 { font-size: 1.15rem; text-align: center; margin-bottom: 4px; font-weight: 600; }
+  .sub { text-align: center; font-size: .82rem; color: #94a3b8; margin-bottom: 18px; }
+  .camera-wrap {
+    position: relative; width: 100%; aspect-ratio: 3 / 4; max-height: 380px;
+    background: #0b1220; border-radius: 12px; overflow: hidden; border: 1px solid #334155;
+  }
+  video { width: 100%; height: 100%; object-fit: cover; display: block; transform: scaleX(-1); }
+  .placeholder {
+    position: absolute; inset: 0; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 8px;
+    color: #64748b; font-size: .85rem; text-align: center; padding: 20px;
+  }
+  .spinner {
+    width: 28px; height: 28px; border: 3px solid #334155;
+    border-top-color: #38bdf8; border-radius: 50%; animation: spin .8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .guide { position: absolute; inset: 0; pointer-events: none; display: none; }
+  .guide.active { display: block; }
+  .guide .oval {
+    position: absolute; top: 50%; left: 50%; width: 58%; height: 80%;
+    transform: translate(-50%, -50%);
+    border: 2px dashed rgba(56, 189, 248, .75); border-radius: 50%;
+    transition: border-color .2s;
+  }
+  .guide .oval.ok { border-color: #4ade80; border-style: solid; }
+  .actions { display: flex; gap: 10px; margin-top: 16px; }
+  button {
+    flex: 1; padding: 12px 14px; font-size: .9rem; font-weight: 600;
+    border: none; border-radius: 10px; cursor: pointer; transition: .18s; font-family: inherit;
+  }
+  button:disabled { opacity: .5; cursor: not-allowed; }
+  .btn-primary { background: #2563eb; color: #fff; }
+  .btn-primary:not(:disabled):hover { background: #1d4ed8; }
+  .btn-secondary { background: #334155; color: #e2e8f0; }
+  .btn-secondary:not(:disabled):hover { background: #475569; }
+  .status { margin-top: 14px; font-size: .82rem; text-align: center; min-height: 20px; color: #94a3b8; }
+  .status.error { color: #f87171; }
+  .status.ok { color: #4ade80; }
+  .form-section {
+    display: none; margin-top: 20px; padding-top: 20px;
+    border-top: 1px solid #334155; animation: fadeIn .4s ease;
+  }
+  .form-section.show { display: block; }
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(6px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .form-section h2 { font-size: .95rem; margin-bottom: 12px; font-weight: 600; color: #cbd5e1; }
+  .field { margin-bottom: 12px; }
+  .field label { display: block; font-size: .78rem; color: #94a3b8; margin-bottom: 5px; }
+  .field input, .field textarea {
+    width: 100%; padding: 10px 12px; font-size: .88rem;
+    background: #0f172a; border: 1px solid #334155; border-radius: 8px;
+    color: #e2e8f0; font-family: inherit; outline: none; transition: .15s;
+  }
+  .field input:focus, .field textarea:focus { border-color: #2563eb; }
+  .field textarea { resize: vertical; min-height: 60px; }
+  .result-section {
+    display: none; margin-top: 16px; padding: 14px; border-radius: 10px;
+    background: rgba(37, 99, 235, .08); border: 1px solid rgba(37, 99, 235, .35);
+    text-align: center; animation: fadeIn .4s ease;
+  }
+  .result-section.show { display: block; }
+  .result-section p { font-size: .82rem; color: #93c5fd; margin-bottom: 6px; }
+  .result-section .preview {
+    width: 100%; border-radius: 8px; border: 1px solid #334155;
+    margin-top: 8px; display: none;
+  }
+  .result-section .preview.show { display: block; }
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>Verifikasi Wajah</h1>
+  <p class="sub">Posisikan wajah di dalam area oval</p>
+
+  <div class="camera-wrap">
+    <video id="video" autoplay playsinline muted></video>
+    <div class="placeholder" id="placeholder">
+      <div class="spinner"></div>
+      <span id="placeholderText">Membuka kamera...</span>
+    </div>
+    <div class="guide" id="guide">
+      <div class="oval" id="oval"></div>
+    </div>
+  </div>
+
+  <div class="actions">
+    <button class="btn-primary" id="btnVerify" disabled>Ambil Foto dan Verifikasi</button>
+  </div>
+
+  <div class="status" id="status">Membuka kamera...</div>
+
+  <div class="form-section" id="formSection">
+    <h2>Data Diri</h2>
+
+    <div class="field">
+      <label for="nama">Nama Lengkap</label>
+      <input type="text" id="nama" placeholder="Masukkan nama lengkap" autocomplete="name" />
+    </div>
+    <div class="field">
+      <label for="nik">NIK</label>
+      <input type="text" id="nik" placeholder="16 digit NIK" inputmode="numeric" maxlength="16" />
+    </div>
+    <div class="field">
+      <label for="telepon">Nomor Telepon</label>
+      <input type="tel" id="telepon" placeholder="08xxxxxxxxxx" inputmode="tel" />
+    </div>
+    <div class="field">
+      <label for="alamat">Alamat</label>
+      <textarea id="alamat" placeholder="Alamat lengkap"></textarea>
+    </div>
+    <div class="field">
+      <label for="keterangan">Keterangan / Keperluan</label>
+      <textarea id="keterangan" placeholder="Tulis keterangan verifikasi"></textarea>
+    </div>
+
+    <div class="actions">
+      <button class="btn-secondary" id="btnDownload" disabled>Download</button>
+      <button class="btn-primary" id="btnSend" disabled>Kirim ke Drive</button>
+    </div>
+
+    <div class="result-section" id="resultSection">
+      <p id="resultText"></p>
+      <img class="preview" id="previewImg" alt="Pratinjau formulir" />
+    </div>
+  </div>
+</div>
+
+<canvas id="captureCanvas" style="display:none;"></canvas>
+<canvas id="formCanvas" style="display:none;"></canvas>
+
+<script>
+(() => {
+  // ============================================================
+  //  GANTI DENGAN URL WEB APP APPS SCRIPT ANDA (yang berakhiran /exec)
+  // ============================================================
+  const APPS_SCRIPT_URL = "GANTI_DENGAN_URL_WEB_APP_APPS_SCRIPT";
+  const MODEL_URL = "https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model/";
+
+  const video       = document.getElementById('video');
+  const placeholder = document.getElementById('placeholder');
+  const placeholderText = document.getElementById('placeholderText');
+  const guide       = document.getElementById('guide');
+  const oval        = document.getElementById('oval');
+  const btnVerify   = document.getElementById('btnVerify');
+  const btnSend     = document.getElementById('btnSend');
+  const btnDownload = document.getElementById('btnDownload');
+  const statusEl    = document.getElementById('status');
+  const formSection = document.getElementById('formSection');
+  const resultSection = document.getElementById('resultSection');
+  const resultText  = document.getElementById('resultText');
+  const previewImg  = document.getElementById('previewImg');
+  const captureCanvas = document.getElementById('captureCanvas');
+  const formCanvas    = document.getElementById('formCanvas');
+
+  let stream = null;
+  let facePhoto = null;
+  let wajahTerverifikasi = false;
+  let modelSiap = false;
+
+  function setStatus(text, type = '') {
+    statusEl.textContent = text;
+    statusEl.className = 'status' + (type ? ' ' + type : '');
+  }
+
+  // ===== 1. BUKA KAMERA DULU =====
+  async function startCamera() {
+    try {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        throw new Error('Browser tidak mendukung akses kamera.');
+      }
+      placeholderText.textContent = 'Membuka kamera...';
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } },
+        audio: false
+      });
+      video.srcObject = stream;
+      await video.play();
+      placeholder.style.display = 'none';
+      guide.classList.add('active');
+      setStatus('Kamera aktif. Memuat deteksi wajah...');
+    } catch (err) {
+      let msg = 'Gagal mengakses kamera.';
+      if (err.name === 'NotAllowedError') msg = 'Izin kamera ditolak. Mohon izinkan akses kamera.';
+      else if (err.name === 'NotFoundError') msg = 'Kamera tidak ditemukan.';
+      else if (err.message) msg = err.message;
+      placeholderText.textContent = msg;
+      setStatus(msg, 'error');
+      return;
+    }
+    await muatModel();
+    if (modelSiap) deteksiLoop();
+  }
+
+  // ===== 2. Muat model =====
+  async function muatModel() {
+    try {
+      setStatus('Memuat model deteksi wajah...');
+      await faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL);
+      modelSiap = true;
+      setStatus('Model siap. Arahkan wajah ke kamera...');
+    } catch (e) {
+      console.warn('Model gagal dimuat:', e);
+      setStatus('Model wajah gagal dimuat. Cek koneksi internet.', 'error');
+    }
+  }
+
+  // ===== 3. Deteksi wajah =====
+  async function deteksiLoop() {
+    if (wajahTerverifikasi) return;
+    if (!modelSiap) { setTimeout(deteksiLoop, 500); return; }
+    if (video.readyState !== 4) { setTimeout(deteksiLoop, 300); return; }
+    try {
+      const det = await faceapi.detectSingleFace(video, new faceapi.TinyFaceDetectorOptions());
+      if (det) {
+        wajahTerverifikasi = true;
+        oval.classList.add('ok');
+        btnVerify.disabled = false;
+        setStatus('✅ Wajah terdeteksi. Silakan ambil foto.', 'ok');
+      } else {
+        btnVerify.disabled = true;
+        setStatus('Wajah belum terdeteksi...', 'error');
+        setTimeout(deteksiLoop, 500);
+      }
+    } catch (e) {
+      setTimeout(deteksiLoop, 500);
+    }
+  }
+
+  // ===== 4. Ambil foto =====
+  function captureFace() {
+    const w = video.videoWidth || 640;
+    const h = video.videoHeight || 480;
+    captureCanvas.width = w; captureCanvas.height = h;
+    const ctx = captureCanvas.getContext('2d');
+    ctx.translate(w, 0); ctx.scale(-1, 1);
+    ctx.drawImage(video, 0, 0, w, h);
+    return captureCanvas.toDataURL('image/jpeg', 0.85);
+  }
+
+  async function verify() {
+    if (!wajahTerverifikasi) return setStatus('Wajah belum terdeteksi.', 'error');
+    facePhoto = captureFace();
+    formSection.classList.add('show');
+    btnSend.disabled = false;
+    btnDownload.disabled = false;
+    btnVerify.disabled = true;
+    btnVerify.textContent = 'Verifikasi Selesai';
+    setStatus('Verifikasi berhasil. Lengkapi data diri.', 'ok');
+    formSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  // ===== 5. Build gambar formulir =====
+  async function buildFormImage() {
+    const nama       = document.getElementById('nama').value.trim();
+    const nik        = document.getElementById('nik').value.trim();
+    const telepon    = document.getElementById('telepon').value.trim();
+    const alamat     = document.getElementById('alamat').value.trim();
+    const keterangan = document.getElementById('keterangan').value.trim();
+
+    if (!nama || !nik || !telepon) {
+      setStatus('Nama, NIK, dan nomor telepon wajib diisi.', 'error');
+      return null;
+    }
+
+    const W = 720, H = 1080;
+    formCanvas.width = W; formCanvas.height = H;
+    const ctx = formCanvas.getContext('2d');
+
+    ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = '#0f172a'; ctx.fillRect(0, 0, W, 80);
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 28px Arial, sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillText('FORMULIR VERIFIKASI WAJAH', 32, 50);
+
+    const fotoImg = await loadImage(facePhoto);
+    const fotoW = 300, fotoH = 400;
+    const fotoX = (W - fotoW) / 2, fotoY = 110;
+    ctx.strokeStyle = '#cbd5e1'; ctx.lineWidth = 2;
+    ctx.strokeRect(fotoX - 2, fotoY - 2, fotoW + 4, fotoH + 4);
+    ctx.drawImage(fotoImg, fotoX, fotoY, fotoW, fotoH);
+
+    ctx.fillStyle = '#64748b';
+    ctx.font = '16px Arial, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('Foto Verifikasi', W / 2, fotoY + fotoH + 28);
+
+    const startY = fotoY + fotoH + 80;
+    ctx.textAlign = 'left'; ctx.fillStyle = '#0f172a';
+
+    const rows = [
+      ['Nama Lengkap', nama],
+      ['NIK', nik],
+      ['Nomor Telepon', telepon],
+      ['Alamat', alamat || '-'],
+      ['Keterangan', keterangan || '-']
+    ];
+
+    let y = startY;
+    const labelX = 60, valueX = 300, maxWidth = W - valueX - 60;
+
+    for (const [label, value] of rows) {
+      ctx.strokeStyle = '#e2e8f0'; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(60, y - 24); ctx.lineTo(W - 60, y - 24); ctx.stroke();
+      ctx.fillStyle = '#64748b';
+      ctx.font = 'bold 20px Arial, sans-serif';
+      ctx.fillText(label, labelX, y);
+      ctx.fillStyle = '#0f172a';
+      ctx.font = '20px Arial, sans-serif';
+      wrapText(ctx, value, valueX, y, maxWidth, 26);
+      const lines = Math.max(1, countLines(ctx, value, maxWidth));
+      y += 50 + (lines - 1) * 26;
+    }
+
+    ctx.fillStyle = '#94a3b8';
+    ctx.font = '16px Arial, sans-serif';
+    ctx.textAlign = 'center';
+    const timestamp = new Date().toLocaleString('id-ID', {
+      day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit'
+    });
+    ctx.fillText('Dikirim pada ' + timestamp, W / 2, H - 40);
+
+    const dataURL = formCanvas.toDataURL('image/jpeg', 0.85);
+    return { dataURL, data: { nama, nik, telepon, alamat, keterangan } };
+  }
+
+  function loadImage(src) {
+    return new Promise((res, rej) => {
+      const img = new Image();
+      img.onload = () => res(img);
+      img.onerror = rej;
+      img.src = src;
+    });
+  }
+  function wrapText(ctx, text, x, y, maxWidth, lineHeight) {
+    const words = String(text).split(/\s+/);
+    let line = '', curY = y;
+    for (const word of words) {
+      const test = line ? line + ' ' + word : word;
+      if (ctx.measureText(test).width > maxWidth && line) {
+        ctx.fillText(line, x, curY); line = word; curY += lineHeight;
+      } else { line = test; }
+    }
+    if (line) ctx.fillText(line, x, curY);
+  }
+  function countLines(ctx, text, maxWidth) {
+    const words = String(text).split(/\s+/);
+    let line = '', count = 1;
+    for (const word of words) {
+      const test = line ? line + ' ' + word : word;
+      if (ctx.measureText(test).width > maxWidth && line) { count++; line = word; }
+      else { line = test; }
+    }
+    return count;
+  }
+
+  function downloadDataURL(dataURL, fileName) {
+    const a = document.createElement('a');
+    a.href = dataURL; a.download = fileName;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  }
+
+  // ===== 6. Download =====
+  async function handleDownload() {
+    btnDownload.disabled = true;
+    setStatus('Menyiapkan gambar...');
+    const built = await buildFormImage();
+    if (!built) { btnDownload.disabled = false; return; }
+    previewImg.src = built.dataURL;
+    previewImg.classList.add('show');
+    resultSection.classList.add('show');
+    resultText.textContent = 'Gambar formulir siap diunduh.';
+    downloadDataURL(built.dataURL, 'formulir-verifikasi-' + Date.now() + '.jpg');
+    setStatus('Gambar formulir berhasil diunduh.', 'ok');
+    btnDownload.disabled = false;
+  }
+
+  // ===== 7. KIRIM GAMBAR KE DRIVE =====
+  async function kirimKeDrive() {
+    btnSend.disabled = true;
+    setStatus('Menyiapkan formulir...');
+    const built = await buildFormImage();
+    if (!built) { btnSend.disabled = false; return; }
+
+    previewImg.src = built.dataURL;
+    previewImg.classList.add('show');
+    resultSection.classList.add('show');
+    resultText.textContent = 'Mengirim gambar formulir ke Drive...';
+    setStatus('Mengirim ke Drive...');
+
+    try {
+      const res = await fetch(APPS_SCRIPT_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({
+          gambarBase64: built.dataURL,
+          nama: built.data.nama,
+          waktu: new Date().toISOString()
+        })
+      });
+      const text = await res.text();
+      let hasil;
+      try { hasil = JSON.parse(text); }
+      catch { throw new Error("Respons bukan JSON: " + text.slice(0, 120)); }
+      if (hasil.status === 'ok') {
+        setStatus('✅ Formulir berhasil dikirim ke Drive.', 'ok');
+        resultText.textContent = 'Tersimpan sebagai: ' + (hasil.fileName || 'formulir.jpg');
+      } else {
+        throw new Error(hasil.pesan || 'Gagal');
+      }
+    } catch (e) {
+      setStatus('Gagal kirim: ' + e.message, 'error');
+      resultText.textContent = 'Gagal mengirim. Periksa koneksi lalu coba lagi.';
+    }
+    btnSend.disabled = false;
+  }
+
+  btnVerify.addEventListener('click', verify);
+  btnSend.addEventListener('click', kirimKeDrive);
+  btnDownload.addEventListener('click', handleDownload);
+
+  startCamera();
+
+  window.addEventListener('beforeunload', () => {
+    if (stream) stream.getTracks().forEach(t => t.stop());
+  });
+})();
+</script>
+</body>
+</html>
